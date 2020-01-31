@@ -1,0 +1,74 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: {{ app_name }}
+  name: {{ app_name }}
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  revisionHistoryLimit: 3
+  minReadySeconds: 15
+  template:
+    metadata:
+      labels:
+        app: {{ app_name }}
+    spec:
+      containers:
+      - name: {{ app_name }}
+        image: {{ deployment.repo }}/postgres-mosql:latest
+        args: ["{{ deployment.args }}"]
+        imagePullPolicy: Always
+        resources:
+          limits:
+            memory: {{ deployment.memory_limits }}
+            cpu: {{ deployment.cpu_limits }}
+          requests:
+            memory: {{ deployment.memory_requests }}
+            cpu: {{ deployment.cpu_requests }}
+        env:
+        - name: ENV
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: APP
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ app_name }}-env
+              key: port
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: {{ app_name }}-env
+              key: node_env
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          timeoutSeconds: 180
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 5
+          timeoutSeconds: 180
+        volumeMounts:
+        - mountPath: "/srv/shared/secrets"
+          name: secrets
+      volumes:
+      - name: secrets
+        secret:
+          secretName: {{ app_name }}
+      restartPolicy: Always

@@ -143,21 +143,6 @@ module MoSQL
       schema
     end
 
-    def fetch_array(obj, dotted)
-      pieces = dotted.split(".")
-      while pieces.length > 2
-        key = pieces.shift
-        obj = obj[key]
-        return nil unless obj.is_a?(Hash)
-      end
-
-      lastKey = pieces[pieces.length-1]
-      prevKey = pieces[pieces.length-2]
-      val = obj[prevKey].select { |it| ! it[lastKey].nil? }
-      values = val.map { |it| transform_primitive_array(it[lastKey]) }
-      Sequel.pg_array(values)
-    end
-
     def fetch_and_delete_dotted(obj, dotted)
       pieces = dotted.split(".")
       breadcrumbs = []
@@ -200,23 +185,6 @@ module MoSQL
       end
     end
 
-    def transform_primitive_array(v, type=nil)
-      case v
-      when BSON::ObjectId, Symbol
-        "{\"$oid\": \""+v.to_s+"\"}"
-      when BSON::Binary
-        if type.downcase == 'uuid'
-          v.to_s.unpack("H*").first
-        else
-          Sequel::SQL::Blob.new(v.to_s)
-        end
-      when BSON::DBRef
-        v.object_id.to_s 
-      else
-        v
-      end
-    end
-
     def transform_primitive(v, type=nil)
       case v
       when BSON::ObjectId, Symbol
@@ -251,8 +219,6 @@ module MoSQL
 
         if source.start_with?("$")
           v = fetch_special_source(obj, source, original)
-        elsif type == 'TEXT[]'
-          v = fetch_array(obj, source)
         else
           v = fetch_and_delete_dotted(obj, source)
           case v
@@ -323,19 +289,22 @@ module MoSQL
 
     def copy_data(db, ns, objs)
       schema = find_ns!(ns)
-      db.synchronize do |pg|
-        sql = "COPY \"#{schema[:meta][:table]}\" " +
-          "(#{all_columns_for_copy(schema).map {|c| "\"#{c}\""}.join(",")}) FROM STDIN"
-        pg.execute(sql)
-        objs.each do |o|
-          pg.put_copy_data(transform_to_copy(ns, o, schema) + "\n")
-        end
-        pg.put_copy_end
-        begin
+      begin
+        db.synchronize do |pg|
+          sql = "COPY \"#{schema[:meta][:table]}\" " +
+            "(#{all_columns_for_copy(schema).map {|c| "\"#{c}\""}.join(",")}) FROM STDIN"
+          pg.execute(sql)
+          objs.each do |o|
+            pg.put_copy_data(transform_to_copy(ns, o, schema) + "\n")
+          end
+          pg.put_copy_end
           pg.get_result.check
-        rescue PGError => e
-          db.send(:raise_error, e)
         end
+      # rescue TypeError, NameError => e
+      rescue StandardError => e
+        # db.send(:raise_error, e)
+        puts "Rescued: #{e.inspect}"
+        # puts "failed rows: #{objs}"
       end
     end
 

@@ -1,0 +1,4 @@
+registries:
+  - us.gcr.io/boxed-api/boxed
+  - us.gcr.io/boxed-api-staging/boxed
+repository: postgres-mosql-dev
