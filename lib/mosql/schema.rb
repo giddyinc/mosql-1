@@ -295,7 +295,7 @@ module MoSQL
             "(#{all_columns_for_copy(schema).map {|c| "\"#{c}\""}.join(",")}) FROM STDIN"
           pg.execute(sql)
           objs.each do |o|
-            pg.put_copy_data(transform_to_copy(ns, o, schema) + "\n")
+            pg.put_copy_data(transform_to_copy(ns, o, schema[:columns]) + "\n")
           end
           pg.put_copy_end
           pg.get_result.check
@@ -308,7 +308,7 @@ module MoSQL
       end
     end
 
-    def quote_copy(val)
+    def quote_copy(val, schema_column)
       case val
       when nil
         "\\N"
@@ -323,12 +323,16 @@ module MoSQL
       when Sequel::SQL::Blob
         "\\\\x" + [val].pack("h*")
       else
-        val.to_s.gsub(/([\\\t\n\r])/, '\\\\\\1')
+        if schema_column[:type] == 'INTEGER' and val.is_a? Float 
+          val.round().to_s
+        else
+          val.to_s.gsub(/([\\\t\n\r])/, '\\\\\\1')
+        end
       end
     end
 
-    def transform_to_copy(ns, row, schema=nil)
-      row.map { |c| quote_copy(c) }.compact.join("\t")
+    def transform_to_copy(ns, row, schema_columns)
+      row.map.with_index { |c, idx| quote_copy(c, schema_columns[idx]) }.compact.join("\t")
     end
 
     def table_for_ns(ns)
